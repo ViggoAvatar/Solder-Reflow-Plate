@@ -1,4 +1,4 @@
-/* Solder Reflow Plate Sketch
+r /* Solder Reflow Plate Sketch
  *  H/W - Ver 2.4
  *  S/W - Ver 1.0
  *  by Chris Halsall     */
@@ -28,6 +28,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <EEPROM.h>
+#include <Bounce2.h>
 
 //Version Definitions
 static const PROGMEM float hw = 2.4;
@@ -45,6 +46,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1); //Create Displ
 #define dnsw 5
 #define temp 16   //A2
 #define vcc 14    //A0
+
+Bounce2::Button upButton;
+Bounce2::Button downButton;
 
 //Temperature Info
 byte maxTempArray[] = { 140, 150, 160, 170, 180 };
@@ -136,10 +140,16 @@ void setup() {
   //Pin Direction control
   pinMode(mosfet,OUTPUT);
   digitalWrite(mosfet,LOW);
-  pinMode(upsw,INPUT);
-  pinMode(dnsw,INPUT);
   pinMode(temp,INPUT);
   pinMode(vcc,INPUT);
+
+  upButton.attach(upsw);
+  upButton.setPressedState(LOW);
+  upButton.interval(10);
+
+  downButton.attach(dnsw);
+  downButton.setPressedState(LOW);
+  downButton.interval(10);
 
   //Pull saved values from EEPROM
   maxTempIndex = EEPROM.read(tempIndexAddr) % sizeof(maxTempArray);
@@ -169,21 +179,23 @@ void setup() {
 }
 
 void main_menu() {
-  //Debounce
-  while(!digitalRead(upsw) || !digitalRead(dnsw)) {  }
   
   int x = 0;  //Display change counter
   int y = 200; //Display change max (modulused below)
   while(1) {
+    upButton.update();
+    downButton.update();
     analogWrite(mosfet,0); //Ensure MOSFET off
     display.clearDisplay();
     display.setTextSize(1);
     display.drawRoundRect( 0, 0, 83, 32, 2, SSD1306_WHITE);
 
     //Button Logic
-    if(!digitalRead(upsw) || !digitalRead(dnsw)) { //If either button pressed
+    if(downButton.pressed() || upButton.pressed()) { //If either button pressed
       delay(100);
-      if(!digitalRead(upsw) && !digitalRead(dnsw)) { //If both buttons pressed
+      //upButton.update();
+      //downButton.update();
+      if(downButton.pressed() && upButton.pressed()) { //If both buttons pressed
         if(!heat(maxTempArray[maxTempIndex])) {
           cancelledPB();
           main_menu();
@@ -194,11 +206,11 @@ void main_menu() {
           main_menu();
         }
       }
-      if(!digitalRead(upsw) && maxTempIndex < sizeof(maxTempArray) - 1) { //If upper button pressed
+      if(upButton.pressed() && maxTempIndex < sizeof(maxTempArray) - 1) { //If upper button pressed
         maxTempIndex++;
         EEPROM.update(tempIndexAddr, maxTempIndex);
       }
-      if(!digitalRead(dnsw) && maxTempIndex > 0) { //If lower button pressed
+      if(downButton.pressed() && maxTempIndex > 0) { //If lower button pressed
         maxTempIndex--;
         EEPROM.update(tempIndexAddr, maxTempIndex);
       }
@@ -234,9 +246,6 @@ void main_menu() {
 }
 
 bool heat(byte maxTemp) {
-  //Debounce
-  while(!digitalRead(upsw) || !digitalRead(dnsw)) {  }
-  
   //Heating Display
   display.clearDisplay();
   display.setTextSize(2);
@@ -267,8 +276,12 @@ bool heat(byte maxTemp) {
   int y = 80; //Heat Animate max (modulused below)
   
   while(1) {
+
+    upButton.update();
+    downButton.update();
+    
     //Button Control
-    if(!digitalRead(upsw) || !digitalRead(dnsw)) {
+    if(downButton.pressed() || upButton.pressed()) {
       analogWrite(mosfet, 0);
       return 0;
     }
@@ -329,8 +342,6 @@ bool heat(byte maxTemp) {
 }
 
 void cancelledPB() { //Cancelled via push button
-  //Debounce
-  while(!digitalRead(upsw) || !digitalRead(dnsw)) {  }
 
   //Update Display
   display.clearDisplay();
@@ -353,19 +364,22 @@ void cancelledPB() { //Cancelled via push button
   delay(50);
 
   //Wait to return on any button press
-  while(digitalRead(upsw) && digitalRead(dnsw)) {  }
+  while(!downButton.pressed() && !upButton.pressed()) { 
+    upButton.update();
+    downButton.update(); 
+  }
 }
 
 void cancelledTimer() { //Cancelled via 5 minute Time Limit
-  //Debounce
-  while(!digitalRead(upsw) || !digitalRead(dnsw)) {  }
 
   //Initiate Swap Display
   int x = 0;  //Display change counter
   int y = 150; //Display change max (modulused below)
 
   //Wait to return on any button press
-  while(digitalRead(upsw) && digitalRead(dnsw)) {
+  while(!downButton.pressed() || !downButton.pressed()) {
+    upButton.update();
+    downButton.update();
     //Update Display
     display.clearDisplay();
     display.drawRoundRect( 22, 0, 84, 32, 2, SSD1306_WHITE );
@@ -408,13 +422,13 @@ void cancelledTimer() { //Cancelled via 5 minute Time Limit
 }
 
 void coolDown() {
-  //Debounce
-  while(!digitalRead(upsw) || !digitalRead(dnsw)) {  }
   
   float t = getTemp(); //Used to store current temperature
   
   //Wait to return on any button press, or temp below threshold
-  while(digitalRead(upsw) && digitalRead(dnsw) && t > 45.00) {
+  while(!downButton.pressed() || !downButton.pressed() && t > 45.00) {
+    upButton.update();
+    downButton.update();
     display.clearDisplay();
     display.drawRoundRect( 22, 0, 84, 32, 2, SSD1306_WHITE );
     display.setCursor(25,4);
@@ -440,9 +454,6 @@ void coolDown() {
 }
 
 void completed() {
-  //Debounce
-  while(!digitalRead(upsw) || !digitalRead(dnsw)) {  }
-
   //Update Display
   display.clearDisplay();
   display.drawRoundRect( 22, 0, 84, 32, 2, SSD1306_WHITE );
@@ -458,7 +469,10 @@ void completed() {
   display.display();
 
   //Wait to return on any button press
-  while(digitalRead(upsw) && digitalRead(dnsw)) {  }
+  while(downButton.pressed() || upButton.pressed()) {
+    upButton.update();
+    downButton.update();
+  }
 }
 
 float getTemp(){
